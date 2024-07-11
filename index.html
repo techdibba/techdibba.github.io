@@ -5,7 +5,7 @@
   <style>
     /* Style for the buttons strip */
     #buttons-strip {
-      height: 50px; /* Adjust as needed for button strip height */
+      height: 30px; /* Adjust as needed for button strip height */
       overflow: auto; /* Enable scrolling if buttons overflow */
       background-color: #90f7f7; /* Background color for buttons strip */
     }
@@ -20,10 +20,17 @@
     /* Style for the buttons */
     button {
       display: inline-block;
-      margin: 5px;
-      padding: 10px;
-      font-size: 12px;
       cursor: pointer;
+	  
+	  background-color: #04AA6D;
+  border: none;
+  color: white;
+  padding: 5px 4px;
+  text-align: center;
+  text-decoration: none;
+  font-size: 16px;
+  margin: 4px 2px;
+  cursor: pointer;
     }
 
     /* Style for images in the main frame */
@@ -60,9 +67,26 @@
 <body>
   <!-- Buttons strip -->
   <div id="buttons-strip">
-    <button onclick="loadImages('nd')">Delhi</button>
-    <button onclick="loadImages('mc')">Moradabad</button>
-    <button onclick="loadImages('ct')">Aligarh</button>
+  <form style="display: inline;">
+        <input type="text" name="year" id="year" size="4">
+		<input type="text" name="month" id="month" size="2 ">
+		<input type="text" name="date" id="date" size="2">
+	</form>
+		<button onclick="loadImages('nd')">Delhi</button>
+		<button onclick="loadImages('mc')">Moradabad</button>
+		<button onclick="loadImages('ct')">Aligarh</button>
+		<button onclick="loadImages('cb')">Bareilly</button>
+    
+
+    <script>
+	var d = new Date();
+
+if ( !!d.valueOf() ) { // Valid date
+    document.getElementById("year").value = d.getFullYear();
+    document.getElementById("month").value = (d.getMonth()+1);
+    document.getElementById("date").value = (d.getDate());
+	} else { /* Invalid date */ }
+    </script>
   </div>
 
   <!-- Main frame for displaying images -->
@@ -72,10 +96,13 @@
     function loadImages(cityCode) {
       var mainframe = document.getElementById('main-frame');
       mainframe.contentDocument.body.innerHTML = ''; // Clear previous content
+	  year_chosen = document.getElementById("year").value
+	  month_chosen = document.getElementById("month").value
+	  date_chosen = document.getElementById("date").value
 
       // Load 20 images based on city code
       for (var i = 1; i <= 20; i++) {
-        var imageUrl = "https://epaperwmimg.amarujala.com/2024/07/11/"  + cityCode + "/" + formatNumber(i) + "/hdimage.jpg";
+        var imageUrl = "https://epaperwmimg.amarujala.com/" + year_chosen + "/" + formatNumber(month_chosen)+ "/" + formatNumber(date_chosen) + "/"  + cityCode + "/" + formatNumber(i) + "/hdimage.jpg";
         var img = document.createElement('img');
         img.src = imageUrl;
         img.className = 'image-item';
