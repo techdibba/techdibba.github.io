@@ -1,4 +1,92 @@
+<!DOCTYPE html>
 <html>
-  Hi...
-  
+<head>
+  <title>AmarUjala</title>
+  <style>
+    /* Style for the buttons strip */
+    #buttons-strip {
+      height: 50px; /* Adjust as needed for button strip height */
+      overflow: auto; /* Enable scrolling if buttons overflow */
+      background-color: #90f7f7; /* Background color for buttons strip */
+    }
+
+    /* Style for the main frame */
+    #main-frame {
+      height: calc(100vh - 50px); /* Calculate remaining height after button strip */
+      width: 100%; /* Full width */
+      border: none; /* Remove iframe border */
+    }
+
+    /* Style for the buttons */
+    button {
+      display: inline-block;
+      margin: 5px;
+      padding: 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* Style for images in the main frame */
+    #image-container {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 10px;
+	  width : 100%;
+    }
+
+    /* Style for each image */
+    .image-item {
+      width: calc(33.33% - 20px); /* Adjust width for responsiveness */
+      margin: 10px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Responsive adjustments for smaller screens */
+    @media (max-width: 768px) {
+      .image-item {
+        width: calc(50% - 20px);
+      }
+    }
+
+    @media (max-width: 480px) {
+      .image-item {
+        width: calc(100% - 20px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Buttons strip -->
+  <div id="buttons-strip">
+    <button onclick="loadImages('nd')">Delhi</button>
+    <button onclick="loadImages('mc')">Moradabad</button>
+    <button onclick="loadImages('ct')">Aligarh</button>
+  </div>
+
+  <!-- Main frame for displaying images -->
+  <iframe id="main-frame" name="mainframe" frameborder="0"></iframe>
+
+  <script>
+    function loadImages(cityCode) {
+      var mainframe = document.getElementById('main-frame');
+      mainframe.contentDocument.body.innerHTML = ''; // Clear previous content
+
+      // Load 20 images based on city code
+      for (var i = 1; i <= 20; i++) {
+        var imageUrl = "https://epaperwmimg.amarujala.com/2024/07/11/"  + cityCode + "/" + formatNumber(i) + "/hdimage.jpg";
+        var img = document.createElement('img');
+        img.src = imageUrl;
+        img.className = 'image-item';
+        mainframe.contentDocument.body.appendChild(img);
+      }
+    }
+
+    // Helper function to format number with leading zero
+    function formatNumber(number) {
+      return number.toString().padStart(2, '0');
+    }
+  </script>
+</body>
 </html>
