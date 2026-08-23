@@ -1,117 +1,684 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>AmarUjala</title>
-  <style>
-    /* Style for the buttons strip */
-    #buttons-strip {
-      height: 30px; /* Adjust as needed for button strip height */
-      overflow: auto; /* Enable scrolling if buttons overflow */
-      background-color: #90f7f7; /* Background color for buttons strip */
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pulse Reader</title>
+<style>
+  :root{
+    --bg:#0B1220;
+    --panel:#121B2E;
+    --panel-raised:#182338;
+    --line:#22304A;
+    --text:#E8ECF3;
+    --text-muted:#7C8AA5;
+    --pulse:#F2545B;
+    --pulse-dim:#7A2E33;
+    --teal:#2DD4BF;
+    --amber:#F5A623;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-data: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:var(--font-ui);
+    -webkit-tap-highlight-color:transparent;
+    overscroll-behavior:none;
+  }
+  #app{
+    max-width:480px; margin:0 auto; min-height:100vh;
+    display:flex; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
 
-    /* Style for the main frame */
-    #main-frame {
-      height: calc(100vh - 50px); /* Calculate remaining height after button strip */
-      width: 100%; /* Full width */
-      border: none; /* Remove iframe border */
-    }
+  /* ---------- Header ---------- */
+  header{
+    padding:18px 20px 10px;
+    display:flex; align-items:baseline; justify-content:space-between;
+  }
+  header h1{
+    font-size:19px; margin:0; letter-spacing:0.02em; font-weight:650;
+  }
+  header .badge{
+    font-family:var(--font-data); font-size:11px; color:var(--text-muted);
+    border:1px solid var(--line); padding:3px 8px; border-radius:20px;
+  }
 
-    /* Style for the buttons */
-    button {
-      	background-color: #04AA6D;
-	border: none;
-	color: white;
-	cursor: pointer;
-	display: inline-block;
-	padding: 5px 4px;
-	text-align: center;
-	text-decoration: none;
-	font-size: 16px;
-	margin: 4px 2px;
-    }
+  /* ---------- Tabs ---------- */
+  nav.tabs{
+    display:flex; gap:6px; padding:0 16px 12px; margin-top:4px;
+  }
+  nav.tabs button{
+    flex:1; padding:9px 0; border-radius:10px; border:1px solid var(--line);
+    background:transparent; color:var(--text-muted); font-family:var(--font-ui);
+    font-size:13px; font-weight:600; letter-spacing:0.01em;
+  }
+  nav.tabs button.active{
+    background:var(--panel-raised); color:var(--text); border-color:var(--teal);
+  }
 
-    /* Style for images in the main frame */
-    #image-container {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      justify-content: flex-start;
-      padding: 10px;
-	  width : 100%;
-    }
+  main{ flex:1; padding:0 16px 24px; }
+  section.view{ display:none; }
+  section.view.active{ display:block; }
 
-    /* Style for each image */
-    .image-item {
-      width: calc(33.33% - 20px); /* Adjust width for responsiveness */
-      margin: 10px;
-      box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
-    }
+  /* ---------- Measure view ---------- */
+  .scope{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:16px; position:relative; overflow:hidden;
+  }
+  .scope canvas{ width:100%; height:150px; display:block; border-radius:10px; background:#0A0F1C; }
 
-    /* Responsive adjustments for smaller screens */
-    @media (max-width: 768px) {
-      .image-item {
-        width: calc(50% - 20px);
-      }
-    }
+  .bpm-display{
+    display:flex; align-items:baseline; justify-content:center; gap:10px;
+    margin:18px 0 4px;
+  }
+  .bpm-number{
+    font-family:var(--font-data); font-size:64px; font-weight:700; line-height:1;
+    color:var(--text); min-width:150px; text-align:right; font-variant-numeric:tabular-nums;
+  }
+  .bpm-unit{ font-size:15px; color:var(--text-muted); font-family:var(--font-data); }
+  .bpm-sub{ text-align:center; color:var(--text-muted); font-size:12px; font-family:var(--font-data); margin-bottom:18px;}
 
-    @media (max-width: 480px) {
-      .image-item {
-        width: calc(100% - 20px);
-      }
-    }
-  </style>
+  .heart-dot{
+    width:10px; height:10px; border-radius:50%; background:var(--pulse-dim);
+    display:inline-block; margin-right:8px; transition:background 60ms, transform 60ms;
+  }
+  .heart-dot.beat{ background:var(--pulse); transform:scale(1.6); }
+
+  .controls{ display:flex; gap:10px; margin-top:8px; }
+  button.primary{
+    flex:1; padding:15px 0; border-radius:12px; border:none;
+    background:var(--pulse); color:#fff; font-size:16px; font-weight:700;
+    font-family:var(--font-ui); letter-spacing:0.01em;
+  }
+  button.primary.stop{ background:var(--panel-raised); color:var(--text); border:1px solid var(--pulse); }
+  button.primary:disabled{ opacity:0.5; }
+
+  .status-line{
+    font-family:var(--font-data); font-size:12px; color:var(--text-muted);
+    text-align:center; margin-top:10px; min-height:16px;
+  }
+  .status-line.warn{ color:var(--amber); }
+  .status-line.error{ color:var(--pulse); }
+
+  .settings-card{
+    margin-top:20px; background:var(--panel); border:1px solid var(--line);
+    border-radius:14px; padding:14px 16px;
+  }
+  .settings-card h3{ margin:0 0 12px; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); font-weight:700;}
+  .slider-row{ margin-bottom:14px; }
+  .slider-row:last-child{ margin-bottom:0; }
+  .slider-row .label-row{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+  .slider-row .label-row span:last-child{ font-family:var(--font-data); color:var(--teal); }
+  input[type=range]{ width:100%; accent-color:var(--teal); }
+
+  /* ---------- History view ---------- */
+  .hist-chart{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px;
+    margin-bottom:16px;
+  }
+  .hist-chart canvas{ width:100%; height:130px; display:block; }
+  .hist-chart .empty{ color:var(--text-muted); font-size:13px; text-align:center; padding:30px 0; }
+
+  .session-item{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; margin-bottom:8px;
+  }
+  .session-item .left .date{ font-size:13px; font-weight:600; }
+  .session-item .left .dur{ font-size:11px; color:var(--text-muted); font-family:var(--font-data); margin-top:2px;}
+  .session-item .bpm{ font-family:var(--font-data); font-size:20px; font-weight:700; color:var(--teal); }
+  .session-item .bpm span{ font-size:11px; color:var(--text-muted); font-weight:400; }
+
+  .clear-btn{
+    width:100%; margin-top:6px; padding:12px; border-radius:12px;
+    background:transparent; border:1px solid var(--line); color:var(--text-muted);
+    font-family:var(--font-ui); font-size:13px;
+  }
+
+  /* ---------- About view ---------- */
+  .about-block{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:14px; font-size:14px; line-height:1.55;
+  }
+  .about-block h3{ margin:0 0 8px; font-size:14px; color:var(--amber); }
+  .about-block p{ margin:0 0 10px; color:var(--text); }
+  .about-block p:last-child{ margin-bottom:0; }
+  .about-block ul{ margin:0; padding-left:18px; color:var(--text); }
+  .about-block li{ margin-bottom:6px; }
+
+  /* ---------- Disclaimer strip (persistent, small) ---------- */
+  .footer-note{
+    text-align:center; font-size:10.5px; color:var(--text-muted);
+    padding:14px 20px 4px; line-height:1.5;
+  }
+
+  /* ---------- Modal (first launch gate) ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(4,7,14,0.88);
+    display:flex; align-items:flex-end; justify-content:center; z-index:50;
+  }
+  .modal-sheet{
+    width:100%; max-width:480px; background:var(--panel);
+    border-radius:20px 20px 0 0; padding:24px 22px 26px;
+    border-top:1px solid var(--line);
+  }
+  .modal-sheet h2{ font-size:18px; margin:0 0 12px; color:var(--amber); }
+  .modal-sheet p{ font-size:14px; line-height:1.55; color:var(--text); margin:0 0 10px; }
+  .modal-sheet ul{ font-size:13.5px; line-height:1.6; padding-left:18px; margin:0 0 16px; color:var(--text);}
+  .modal-sheet button{
+    width:100%; padding:15px 0; border-radius:12px; border:none;
+    background:var(--teal); color:#04241f; font-weight:700; font-size:15px;
+  }
+</style>
 </head>
 <body>
-  <!-- Buttons strip -->
-  <div id="buttons-strip">
-  <form style="display: inline;">
-        <input type="text" name="year" id="year" size="4">
-		<input type="text" name="month" id="month" size="2 ">
-		<input type="text" name="date" id="date" size="2">
-	</form>
-		<button onclick="loadImages('nd')">Delhi</button>
-		<button onclick="loadImages('mc')">Moradabad</button>
-		<button onclick="loadImages('ct')">Aligarh</button>
-		<button onclick="loadImages('cb')">Bareilly</button>
-    
 
-    <script>
-	var d = new Date();
+<div id="app">
 
-if ( !!d.valueOf() ) { // Valid date
-    document.getElementById("year").value = d.getFullYear();
-    document.getElementById("month").value = (d.getMonth()+1);
-    document.getElementById("date").value = (d.getDate());
-	} else { /* Invalid date */ }
-    </script>
+  <header>
+    <h1>Pulse Reader</h1>
+    <span class="badge">v0.1 · prototype</span>
+  </header>
+
+  <nav class="tabs">
+    <button data-view="measure" class="active">Measure</button>
+    <button data-view="history">History</button>
+    <button data-view="about">About</button>
+  </nav>
+
+  <main>
+
+    <!-- ============ MEASURE ============ -->
+    <section class="view active" id="view-measure">
+
+      <div class="scope">
+        <canvas id="waveCanvas"></canvas>
+      </div>
+
+      <div class="bpm-display">
+        <span class="heart-dot" id="heartDot"></span>
+        <span class="bpm-number" id="bpmNumber">--</span>
+        <span class="bpm-unit">bpm</span>
+      </div>
+      <div class="bpm-sub" id="bpmSub">place phone flat against bare chest, stay still</div>
+
+      <div class="controls">
+        <button class="primary" id="startBtn">Start Measuring</button>
+      </div>
+      <div class="status-line" id="statusLine"></div>
+
+      <div class="settings-card">
+        <h3>Detection Settings</h3>
+        <div class="slider-row">
+          <div class="label-row"><span>Threshold</span><span id="threshVal">0.30 m/s²</span></div>
+          <input type="range" id="threshSlider" min="0.10" max="1.00" step="0.05" value="0.30">
+        </div>
+        <div class="slider-row">
+          <div class="label-row"><span>Minimum delay</span><span id="delayVal">0.50 s</span></div>
+          <input type="range" id="delaySlider" min="0.30" max="1.20" step="0.05" value="0.50">
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section class="view" id="view-history">
+      <div class="hist-chart">
+        <canvas id="histCanvas"></canvas>
+        <div class="empty" id="histEmpty">No sessions recorded yet. Take a measurement to see your trend here.</div>
+      </div>
+      <div id="sessionList"></div>
+      <button class="clear-btn" id="clearHistoryBtn">Clear all history</button>
+    </section>
+
+    <!-- ============ ABOUT ============ -->
+    <section class="view" id="view-about">
+      <div class="about-block">
+        <h3>⚠ Not a medical device</h3>
+        <p>Pulse Reader estimates heart rate by detecting tiny chest-wall vibrations from each heartbeat using your phone's accelerometer (a technique called seismocardiography). It is an experimental hobby project, not a certified medical or diagnostic tool.</p>
+        <ul>
+          <li>Do not use it to diagnose, monitor, or make decisions about any medical condition.</li>
+          <li>Readings can be thrown off by movement, breathing, talking, loose contact, or clothing between the phone and skin.</li>
+          <li>It has not been validated against a clinical ECG on a large scale.</li>
+          <li>If you have chest pain, an irregular heartbeat, or any cardiac symptoms, contact a medical professional or emergency services — do not rely on this app.</li>
+        </ul>
+      </div>
+      <div class="about-block">
+        <h3>How to get a good reading</h3>
+        <ul>
+          <li>Sit or lie down and stay as still as possible.</li>
+          <li>Place the phone flat against bare skin on your chest, screen up or down, pressed gently but firmly.</li>
+          <li>Hold your breath for a few seconds at a time if readings look noisy.</li>
+          <li>Adjust the threshold and minimum delay sliders if beats are being missed or over-counted.</li>
+        </ul>
+      </div>
+      <div class="about-block">
+        <h3>About this build</h3>
+        <p>This is an early prototype built to test the sensing approach before it's packaged as an installable app. All data currently stays on this device only.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="footer-note">Not a medical device · for personal experimentation only</div>
+</div>
+
+<!-- ============ First-launch disclaimer gate ============ -->
+<div class="modal-overlay" id="gateModal">
+  <div class="modal-sheet">
+    <h2>Before you start</h2>
+    <p>Pulse Reader is an experimental tool that estimates heart rate from your phone's motion sensor. Please read this first:</p>
+    <ul>
+      <li>This is <strong>not a medical device</strong> and is not intended to diagnose or monitor any health condition.</li>
+      <li>Accuracy varies a lot with body position, movement, and phone placement.</li>
+      <li>For any real health concern, consult a doctor — don't rely on this app.</li>
+    </ul>
+    <button id="acceptBtn">I understand, continue</button>
   </div>
+</div>
 
-  <!-- Main frame for displaying images -->
-  <iframe id="main-frame" name="mainframe" frameborder="0"></iframe>
+<script>
+(function(){
 
-  <script>
-    function loadImages(cityCode) {
-      var mainframe = document.getElementById('main-frame');
-      mainframe.contentDocument.body.innerHTML = ''; // Clear previous content
-	  year_chosen = document.getElementById("year").value
-	  month_chosen = document.getElementById("month").value
-	  date_chosen = document.getElementById("date").value
+  /* ============================================================
+     0. Small persistence helpers (localStorage — offline, no login)
+  ============================================================ */
+  const store = {
+    get(key, fallback){
+      try{ const v = localStorage.getItem(key); return v===null? fallback : JSON.parse(v); }
+      catch(e){ return fallback; }
+    },
+    set(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
+  };
 
-      // Load 20 images based on city code
-      for (var i = 1; i <= 20; i++) {
-        var imageUrl = "https://epaperwmimg.amarujala.com/" + year_chosen + "/" + formatNumber(month_chosen)+ "/" + formatNumber(date_chosen) + "/"  + cityCode + "/" + formatNumber(i) + "/hdimage.jpg";
-        var img = document.createElement('img');
-        img.src = imageUrl;
-        img.className = 'image-item';
-        mainframe.contentDocument.body.appendChild(img);
+  /* ============================================================
+     1. First-launch disclaimer gate
+  ============================================================ */
+  const gateModal = document.getElementById('gateModal');
+  if(store.get('hb_disclaimer_accepted', false)){
+    gateModal.style.display = 'none';
+  }
+  document.getElementById('acceptBtn').addEventListener('click', ()=>{
+    store.set('hb_disclaimer_accepted', true);
+    gateModal.style.display = 'none';
+  });
+
+  /* ============================================================
+     2. Tab navigation
+  ============================================================ */
+  const tabButtons = document.querySelectorAll('nav.tabs button');
+  const views = {
+    measure: document.getElementById('view-measure'),
+    history: document.getElementById('view-history'),
+    about: document.getElementById('view-about'),
+  };
+  tabButtons.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      tabButtons.forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      Object.values(views).forEach(v=>v.classList.remove('active'));
+      views[btn.dataset.view].classList.add('active');
+      if(btn.dataset.view === 'history') renderHistory();
+    });
+  });
+
+  /* ============================================================
+     3. Settings (threshold / min delay), persisted
+  ============================================================ */
+  let threshold = store.get('hb_threshold', 0.30);
+  let minDelay  = store.get('hb_minDelay', 0.50); // seconds
+
+  const threshSlider = document.getElementById('threshSlider');
+  const delaySlider  = document.getElementById('delaySlider');
+  const threshVal = document.getElementById('threshVal');
+  const delayVal  = document.getElementById('delayVal');
+
+  threshSlider.value = threshold;
+  delaySlider.value  = minDelay;
+  threshVal.textContent = threshold.toFixed(2) + ' m/s²';
+  delayVal.textContent  = minDelay.toFixed(2) + ' s';
+
+  threshSlider.addEventListener('input', ()=>{
+    threshold = parseFloat(threshSlider.value);
+    threshVal.textContent = threshold.toFixed(2) + ' m/s²';
+    store.set('hb_threshold', threshold);
+  });
+  delaySlider.addEventListener('input', ()=>{
+    minDelay = parseFloat(delaySlider.value);
+    delayVal.textContent = minDelay.toFixed(2) + ' s';
+    store.set('hb_minDelay', minDelay);
+  });
+
+  /* ============================================================
+     4. Waveform canvas (scrolling scope view)
+  ============================================================ */
+  const waveCanvas = document.getElementById('waveCanvas');
+  const waveCtx = waveCanvas.getContext('2d');
+  function fitCanvas(c){
+    const ratio = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+    c.width = rect.width * ratio;
+    c.height = rect.height * ratio;
+    c.getContext('2d').setTransform(ratio,0,0,ratio,0,0);
+  }
+  fitCanvas(waveCanvas);
+
+  const WAVE_BUFFER_SECONDS = 6;
+  let waveBuffer = []; // {t, v, peak}
+
+  function drawWave(){
+    const rect = waveCanvas.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    waveCtx.clearRect(0,0,w,h);
+
+    // grid
+    waveCtx.strokeStyle = '#1B2740';
+    waveCtx.lineWidth = 1;
+    for(let i=1;i<4;i++){
+      const y = (h/4)*i;
+      waveCtx.beginPath(); waveCtx.moveTo(0,y); waveCtx.lineTo(w,y); waveCtx.stroke();
+    }
+    // center line
+    waveCtx.strokeStyle = '#26344F';
+    waveCtx.beginPath(); waveCtx.moveTo(0,h/2); waveCtx.lineTo(w,h/2); waveCtx.stroke();
+
+    if(waveBuffer.length < 2) return;
+
+    const now = performance.now();
+    const tMin = now - WAVE_BUFFER_SECONDS*1000;
+
+    // auto-scale vertical range a bit beyond threshold so line stays visible
+    const scale = Math.max(threshold*3, 0.8);
+
+    waveCtx.beginPath();
+    waveCtx.strokeStyle = '#2DD4BF';
+    waveCtx.lineWidth = 1.5;
+    let started = false;
+    waveBuffer.forEach(pt=>{
+      if(pt.t < tMin) return;
+      const x = ((pt.t - tMin)/(now - tMin)) * w;
+      const y = h/2 - (pt.v/scale) * (h/2 - 6);
+      if(!started){ waveCtx.moveTo(x,y); started = true; }
+      else waveCtx.lineTo(x,y);
+    });
+    waveCtx.stroke();
+
+    // threshold line
+    const yThresh = h/2 - (threshold/scale) * (h/2 - 6);
+    waveCtx.strokeStyle = 'rgba(245,166,35,0.5)';
+    waveCtx.setLineDash([4,4]);
+    waveCtx.beginPath(); waveCtx.moveTo(0,yThresh); waveCtx.lineTo(w,yThresh); waveCtx.stroke();
+    waveCtx.setLineDash([]);
+
+    // peak markers
+    waveBuffer.forEach(pt=>{
+      if(pt.t < tMin || !pt.peak) return;
+      const x = ((pt.t - tMin)/(now - tMin)) * w;
+      const y = h/2 - (pt.v/scale) * (h/2 - 6);
+      waveCtx.beginPath();
+      waveCtx.fillStyle = '#F2545B';
+      waveCtx.arc(x,y,3.5,0,Math.PI*2);
+      waveCtx.fill();
+    });
+  }
+
+  /* ============================================================
+     5. Sensor + peak detection engine
+  ============================================================ */
+  const bpmNumber = document.getElementById('bpmNumber');
+  const bpmSub = document.getElementById('bpmSub');
+  const heartDot = document.getElementById('heartDot');
+  const statusLine = document.getElementById('statusLine');
+  const startBtn = document.getElementById('startBtn');
+
+  let measuring = false;
+  let motionHandler = null;
+  let beatTimes = [];      // timestamps (ms, performance.now-based) of detected beats this session
+  let lastBeatTime = 0;
+  let runningAvg = 0;      // slow-moving average used as a crude high-pass baseline
+  let sessionStart = 0;
+  let animFrame = null;
+  let lastSampleTime = 0;
+  let noSampleWarnTimer = null;
+
+  function magnitude(x,y,z){ return Math.sqrt(x*x + y*y + z*z); }
+
+  function handleMotion(event){
+    lastSampleTime = performance.now();
+    let a = event.acceleration; // gravity already removed, if supported
+    if(!a || (a.x===null && a.y===null && a.z===null)){
+      a = event.accelerationIncludingGravity;
+      if(!a) return;
+    }
+    const x = a.x||0, y = a.y||0, z = a.z||0;
+    const mag = magnitude(x,y,z);
+
+    // crude high-pass: subtract a slow running average so gravity / slow drift is removed
+    const alpha = 0.02; // smoothing factor for baseline
+    runningAvg = runningAvg===0 ? mag : (runningAvg*(1-alpha) + mag*alpha);
+    const filtered = mag - runningAvg;
+    const val = Math.abs(filtered);
+
+    const t = performance.now();
+    let isPeak = false;
+
+    if(val > threshold && (t - lastBeatTime) > minDelay*1000){
+      isPeak = true;
+      lastBeatTime = t;
+      beatTimes.push(t);
+      heartDot.classList.add('beat');
+      setTimeout(()=>heartDot.classList.remove('beat'), 120);
+      updateBpmDisplay();
+    }
+
+    waveBuffer.push({t, v: filtered, peak: isPeak});
+    const cutoff = t - (WAVE_BUFFER_SECONDS*1000 + 500);
+    while(waveBuffer.length && waveBuffer[0].t < cutoff) waveBuffer.shift();
+  }
+
+  function updateBpmDisplay(){
+    // use beats within the last 12s (or fewer if session just started) for a responsive-but-stable estimate
+    const now = performance.now();
+    const windowMs = 12000;
+    const recent = beatTimes.filter(t => now - t <= windowMs);
+    if(recent.length >= 2){
+      const spanSec = (recent[recent.length-1] - recent[0]) / 1000;
+      const bpm = spanSec > 0 ? ((recent.length-1) / spanSec) * 60 : 0;
+      bpmNumber.textContent = Math.round(bpm);
+      bpmSub.textContent = recent.length + ' beats detected · last ' + Math.round(spanSec) + 's window';
+    } else if(beatTimes.length === 1){
+      bpmNumber.textContent = '--';
+      bpmSub.textContent = 'first beat detected, keep still…';
+    }
+  }
+
+  function loop(){
+    drawWave();
+    if(measuring){
+      if(lastSampleTime && performance.now() - lastSampleTime > 1500){
+        setStatus('No sensor data — is a browser sensor permission blocked?', 'error');
+      }
+      animFrame = requestAnimationFrame(loop);
+    }
+  }
+
+  function setStatus(msg, type){
+    statusLine.textContent = msg || '';
+    statusLine.className = 'status-line' + (type ? ' '+type : '');
+  }
+
+  async function startMeasuring(){
+    setStatus('');
+    // iOS 13+ requires an explicit permission prompt; Android Chrome generally does not.
+    if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+      try{
+        const res = await DeviceMotionEvent.requestPermission();
+        if(res !== 'granted'){
+          setStatus('Motion sensor permission was denied.', 'error');
+          return;
+        }
+      }catch(e){
+        setStatus('Could not request motion permission: '+e.message, 'error');
+        return;
       }
     }
 
-    // Helper function to format number with leading zero
-    function formatNumber(number) {
-      return number.toString().padStart(2, '0');
+    if(!window.DeviceMotionEvent){
+      setStatus('This browser does not expose motion sensor data.', 'error');
+      return;
     }
-  </script>
+    if(location.protocol !== 'https:' && location.hostname !== 'localhost' && location.protocol !== 'capacitor:' && location.protocol !== 'file:'){
+      setStatus('Motion sensors usually require HTTPS to work.', 'warn');
+    }
+
+    measuring = true;
+    beatTimes = [];
+    lastBeatTime = 0;
+    runningAvg = 0;
+    waveBuffer = [];
+    sessionStart = performance.now();
+    lastSampleTime = 0;
+    bpmNumber.textContent = '--';
+    bpmSub.textContent = 'listening for your heartbeat…';
+
+    motionHandler = handleMotion;
+    window.addEventListener('devicemotion', motionHandler);
+
+    startBtn.textContent = 'Stop & Save';
+    startBtn.classList.add('stop');
+    animFrame = requestAnimationFrame(loop);
+  }
+
+  function stopMeasuring(){
+    measuring = false;
+    if(motionHandler) window.removeEventListener('devicemotion', motionHandler);
+    if(animFrame) cancelAnimationFrame(animFrame);
+    startBtn.textContent = 'Start Measuring';
+    startBtn.classList.remove('stop');
+
+    const durationSec = (performance.now() - sessionStart)/1000;
+
+    if(beatTimes.length >= 3 && durationSec >= 5){
+      const intervals = [];
+      for(let i=1;i<beatTimes.length;i++) intervals.push(beatTimes[i]-beatTimes[i-1]);
+      const meanIntervalMs = intervals.reduce((a,b)=>a+b,0)/intervals.length;
+      const avgBpm = Math.round(60000/meanIntervalMs);
+      const instBpms = intervals.map(iv => 60000/iv);
+      const minBpm = Math.round(Math.min(...instBpms));
+      const maxBpm = Math.round(Math.max(...instBpms));
+
+      const session = {
+        date: new Date().toISOString(),
+        avgBpm, minBpm, maxBpm,
+        durationSec: Math.round(durationSec),
+        beatCount: beatTimes.length,
+        threshold, minDelay
+      };
+      const sessions = store.get('hb_sessions', []);
+      sessions.push(session);
+      store.set('hb_sessions', sessions);
+
+      bpmSub.textContent = 'Saved: ' + avgBpm + ' bpm avg over ' + Math.round(durationSec) + 's';
+      setStatus('Session saved to History.', '');
+    } else {
+      setStatus('Not enough clean beats to save a session — try again, staying still.', 'warn');
+    }
+  }
+
+  startBtn.addEventListener('click', ()=>{
+    if(!measuring) startMeasuring();
+    else stopMeasuring();
+  });
+
+  window.addEventListener('resize', ()=>{ fitCanvas(waveCanvas); fitCanvas(histCanvas); });
+
+  /* ============================================================
+     6. History view: list + simple trend chart
+  ============================================================ */
+  const histCanvas = document.getElementById('histCanvas');
+  const histEmpty = document.getElementById('histEmpty');
+  const sessionList = document.getElementById('sessionList');
+  fitCanvas(histCanvas);
+
+  function renderHistory(){
+    const sessions = store.get('hb_sessions', []);
+    // list, most recent first
+    sessionList.innerHTML = '';
+    [...sessions].reverse().forEach(s=>{
+      const d = new Date(s.date);
+      const div = document.createElement('div');
+      div.className = 'session-item';
+      div.innerHTML = `
+        <div class="left">
+          <div class="date">${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})} · ${d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})}</div>
+          <div class="dur">${s.durationSec}s · ${s.beatCount} beats · range ${s.minBpm}-${s.maxBpm}</div>
+        </div>
+        <div class="bpm">${s.avgBpm} <span>bpm</span></div>
+      `;
+      sessionList.appendChild(div);
+    });
+
+    // trend chart
+    const ctx = histCanvas.getContext('2d');
+    const rect = histCanvas.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    ctx.clearRect(0,0,w,h);
+
+    if(sessions.length === 0){
+      histEmpty.style.display = 'block';
+      return;
+    }
+    histEmpty.style.display = 'none';
+
+    const recent = sessions.slice(-20);
+    const bpms = recent.map(s=>s.avgBpm);
+    const minV = Math.min(...bpms) - 5;
+    const maxV = Math.max(...bpms) + 5;
+    const pad = 10;
+
+    // gridlines
+    ctx.strokeStyle = '#1B2740';
+    ctx.lineWidth = 1;
+    for(let i=0;i<=3;i++){
+      const y = pad + ((h-2*pad)/3)*i;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#2DD4BF';
+    ctx.lineWidth = 2;
+    recent.forEach((s,i)=>{
+      const x = recent.length===1 ? w/2 : (i/(recent.length-1))*(w-2*pad)+pad;
+      const y = h - pad - ((s.avgBpm-minV)/(maxV-minV))*(h-2*pad);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+
+    recent.forEach((s,i)=>{
+      const x = recent.length===1 ? w/2 : (i/(recent.length-1))*(w-2*pad)+pad;
+      const y = h - pad - ((s.avgBpm-minV)/(maxV-minV))*(h-2*pad);
+      ctx.beginPath();
+      ctx.fillStyle = '#F2545B';
+      ctx.arc(x,y,3,0,Math.PI*2);
+      ctx.fill();
+    });
+  }
+
+  document.getElementById('clearHistoryBtn').addEventListener('click', ()=>{
+    if(confirm('Delete all saved sessions? This cannot be undone.')){
+      store.set('hb_sessions', []);
+      renderHistory();
+    }
+  });
+
+  renderHistory();
+  drawWave();
+
+})();
+</script>
+
 </body>
 </html>
