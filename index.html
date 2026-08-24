@@ -251,8 +251,8 @@
 
         <div id="autoModeControls">
           <div class="slider-row">
-            <div class="label-row"><span>Sensitivity</span><span id="sensVal">Medium</span></div>
-            <input type="range" id="sensSlider" min="0.15" max="0.55" step="0.05" value="0.30">
+            <div class="label-row"><span>Sensitivity</span><span id="sensVal">High (lenient)</span></div>
+            <input type="range" id="sensSlider" min="0.15" max="0.55" step="0.05" value="0.20">
             <div class="hint-text">Lower = catches more (risk of false beats). Higher = stricter (risk of missed beats).</div>
           </div>
         </div>
@@ -265,9 +265,9 @@
         </div>
 
         <div class="slider-row" style="margin-top:14px;">
-          <div class="label-row"><span>Minimum delay</span><span id="delayVal">0.40 s</span></div>
-          <input type="range" id="delaySlider" min="0.27" max="1.20" step="0.01" value="0.40">
-          <div class="hint-text">Caps max detectable rate. 0.40s ≈ 150 bpm ceiling.</div>
+          <div class="label-row"><span>Minimum delay</span><span id="delayVal">0.50 s</span></div>
+          <input type="range" id="delaySlider" min="0.35" max="1.20" step="0.01" value="0.50">
+          <div class="hint-text">Each heartbeat causes two close-together bumps in the signal, so this needs to be long enough to not count both. 0.50s ≈ 120 bpm ceiling.</div>
         </div>
       </div>
 
@@ -294,6 +294,10 @@
           <li>It has not been validated against a clinical ECG on a large scale.</li>
           <li>If you have chest pain, an irregular heartbeat, or any cardiac symptoms, contact a medical professional or emergency services — do not rely on this app.</li>
         </ul>
+      </div>
+      <div class="about-block">
+        <h3>Why two beats can look like one, or one like two</h3>
+        <p>Each heartbeat produces more than one small mechanical bump in this signal — likely corresponding to more than one physical event in a single cardiac cycle, similar in spirit to the two audible heart sounds ("lub-dub") a stethoscope picks up. If detection is too lenient, both bumps can get counted as separate beats and the reading comes out too high. If too strict, weak signals can miss both. The minimum delay setting exists mainly to make sure only one of these two bumps per heartbeat gets counted.</p>
       </div>
       <div class="about-block">
         <h3>How to get a good reading</h3>
@@ -378,9 +382,11 @@
      3. Settings — Auto (adaptive) mode vs Manual (fixed threshold)
   ============================================================ */
   let detectMode = store.get('hb_mode', 'auto');       // 'auto' | 'manual'
-  let sensitivity = store.get('hb_sensitivity', 0.30); // used in auto mode: 0.15 (lenient) .. 0.55 (strict)
+  let sensitivity = store.get('hb_sensitivity', 0.20); // used in auto mode: 0.15 (lenient) .. 0.55 (strict)
   let threshold   = store.get('hb_threshold', 0.30);   // used in manual mode only, raw m/s²
-  let minDelay    = store.get('hb_minDelay', 0.40);    // seconds, both modes
+  let minDelay    = store.get('hb_minDelay', 0.50);    // seconds, both modes — must exceed the ~350-450ms gap
+                                                          // between the two mechanical bumps of a single heartbeat,
+                                                          // or both get counted as separate beats
 
   const modeAutoBtn = document.getElementById('modeAutoBtn');
   const modeManualBtn = document.getElementById('modeManualBtn');
