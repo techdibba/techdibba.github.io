@@ -234,10 +234,12 @@
       </div>
 
       <div class="controls">
-        <button class="primary secondary-btn" id="calibrateBtn">Calibrate (5s)</button>
+        <button class="primary secondary-btn" id="calibrateBtn">Calibrate (8s)</button>
         <button class="primary" id="startBtn" disabled>Start Measuring</button>
       </div>
       <div class="status-line" id="statusLine">Calibrate first so the app can learn your signal.</div>
+
+      <button class="clear-btn" id="exportLogBtn" style="display:none;">Export raw sensor data (.csv)</button>
 
       <div class="settings-card">
         <h3>Detection Settings</h3>
@@ -527,6 +529,7 @@
   const statusLine = document.getElementById('statusLine');
   const startBtn = document.getElementById('startBtn');
   const calibrateBtn = document.getElementById('calibrateBtn');
+  const exportLogBtn = document.getElementById('exportLogBtn');
   const qualityRow = document.getElementById('qualityRow');
   const qualityDot = document.getElementById('qualityDot');
   const qualityText = document.getElementById('qualityText');
@@ -547,6 +550,12 @@
   let lastCandidateTime = 0;
   const CANDIDATE_REFRACTORY_MS = 180; // min spacing between local-maxima candidates
   let calibrated = false;
+  let rrIntervals = [];     // recent beat-to-beat intervals (ms), used to predict when the next beat is "due"
+  let candidateBuffer = []; // recent {t, val} candidates kept a few seconds back, for search-back recovery
+
+  // --- raw data logging (for export/debugging) ---
+  let rawLog = [];
+  let logStartTime = 0;
 
   function magnitude(x,y,z){ return Math.sqrt(x*x + y*y + z*z); }
 
@@ -607,16 +616,51 @@
       return;
     }
     peaks.sort((a,b)=>a-b);
-    // top ~40% of candidate peaks ≈ likely real beats; bottom ~40% ≈ noise floor
-    const noiseSlice = peaks.slice(0, Math.max(1, Math.floor(peaks.length*0.4)));
-    const signalSlice = peaks.slice(Math.ceil(peaks.length*0.6));
+    // Find the largest gap between consecutive sorted peak heights — this is the natural
+    // dividing line between "small noise wiggles" and "big real beats", rather than assuming
+    // a fixed ratio of how many of each we saw.
+    let splitIdx = Math.ceil(peaks.length/2);
+    let bestGap = -1;
+    const searchStart = Math.max(1, Math.floor(peaks.length*0.2));
+    const searchEnd = Math.min(peaks.length-1, Math.ceil(peaks.length*0.85));
+    for(let i=searchStart;i<=searchEnd;i++){
+      const gap = peaks[i]-peaks[i-1];
+      if(gap > bestGap){ bestGap = gap; splitIdx = i; }
+    }
+    const noiseSlice = peaks.slice(0, splitIdx);
+    const signalSlice = peaks.slice(splitIdx);
     noisePeak = noiseSlice.reduce((a,b)=>a+b,0)/noiseSlice.length;
     signalPeak = (signalSlice.length ? signalSlice : peaks).reduce((a,b)=>a+b,0)/(signalSlice.length||peaks.length);
     if(signalPeak <= noisePeak) signalPeak = noisePeak*1.5 + 0.02;
     calibrated = true;
+    rrIntervals = [];
     updateQualityDisplay();
     startBtn.disabled = false;
     setStatus('Calibration complete — ready to measure.', '');
+  }
+
+  function acceptBeat(val, t, isRetro){
+    if(lastBeatTime){
+      const rr = t - lastBeatTime;
+      rrIntervals.push(rr);
+      if(rrIntervals.length > 8) rrIntervals.shift();
+    }
+    lastBeatTime = t;
+    beatTimes.push(t);
+    beatTimes.sort((a,b)=>a-b);
+    if(detectMode==='auto') signalPeak = 0.125*val + 0.875*signalPeak;
+    if(!isRetro){
+      heartDot.classList.add('beat');
+      setTimeout(()=>heartDot.classList.remove('beat'), 120);
+    }
+    // mark the nearest wave-buffer sample as a visible peak dot
+    let nearest = null, nearestDiff = Infinity;
+    for(const pt of waveBuffer){
+      const d = Math.abs(pt.t - t);
+      if(d < nearestDiff){ nearestDiff = d; nearest = pt; }
+    }
+    if(nearest && nearestDiff < 60) nearest.peak = true;
+    updateBpmDisplay();
   }
 
   function handleMotion(event){
@@ -629,35 +673,69 @@
     const x = a.x||0, y = a.y||0, z = a.z||0;
     const mag = magnitude(x,y,z);
 
+    const r = event.rotationRate || {};
+    const gx = r.alpha||0, gy = r.beta||0, gz = r.gamma||0;
+    const gyroMag = (r.alpha!=null) ? magnitude(gx,gy,gz) : null;
+
     // crude high-pass: subtract a slow running average so gravity / slow drift is removed
     const alpha = 0.02;
     runningAvg = runningAvg===0 ? mag : (runningAvg*(1-alpha) + mag*alpha);
     const filtered = mag - runningAvg;
     const t = performance.now();
 
+    let isPeak = false;
+    let liveThreshold = null;
+
     if(calibrating){
       calibrationSample(filtered, t, window.__calPeaks);
       waveBuffer.push({t, v: filtered, peak:false});
     } else if(measuring){
-      const val = Math.abs(filtered);
       const candidate = processSample(filtered, t);
-      let isPeak = false;
-      const th = currentThreshold();
+      liveThreshold = currentThreshold();
 
       if(candidate !== null){
-        if(candidate > th && (t - lastBeatTime) > minDelay*1000){
+        candidateBuffer.push({t, val: candidate});
+        const bufCutoff = t - 3000;
+        while(candidateBuffer.length && candidateBuffer[0].t < bufCutoff) candidateBuffer.shift();
+
+        if(candidate > liveThreshold && (t - lastBeatTime) > minDelay*1000){
           isPeak = true;
-          lastBeatTime = t;
-          beatTimes.push(t);
-          heartDot.classList.add('beat');
-          setTimeout(()=>heartDot.classList.remove('beat'), 120);
-          updateBpmDisplay();
-          if(detectMode==='auto') signalPeak = 0.125*candidate + 0.875*signalPeak;
-        } else if(detectMode==='auto') {
+          acceptBeat(candidate, t, false);
+        } else if(detectMode==='auto' && candidate < 0.5*liveThreshold){
+          // only fold clearly-small candidates into the noise estimate, so a real beat
+          // that's merely a bit under threshold doesn't drag the noise floor upward
           noisePeak = 0.125*candidate + 0.875*noisePeak;
         }
       }
+
+      // search-back: if the next beat is overdue compared to the recent rhythm, re-scan
+      // recent candidates with a relaxed threshold rather than just giving up on that beat
+      if(detectMode==='auto' && rrIntervals.length >= 2 && lastBeatTime){
+        const avgRR = rrIntervals.reduce((a,b)=>a+b,0)/rrIntervals.length;
+        if((t - lastBeatTime) > avgRR*1.6){
+          const relaxedTh = liveThreshold*0.55;
+          let best = null;
+          for(const c of candidateBuffer){
+            if(c.t > lastBeatTime + minDelay*1000 && c.t <= t && c.val > relaxedTh){
+              if(!best || c.val > best.val) best = c;
+            }
+          }
+          if(best) acceptBeat(best.val, best.t, true);
+        }
+      }
+
       waveBuffer.push({t, v: filtered, peak: isPeak});
+    }
+
+    if(measuring || calibrating){
+      rawLog.push({
+        t: Math.round(t - logStartTime),
+        ax:+x.toFixed(4), ay:+y.toFixed(4), az:+z.toFixed(4),
+        gx: gyroMag!==null ? +gx.toFixed(3) : '', gy: gyroMag!==null ? +gy.toFixed(3) : '', gz: gyroMag!==null ? +gz.toFixed(3) : '',
+        mag:+mag.toFixed(4), filtered:+filtered.toFixed(4), gyroMag: gyroMag!==null ? +gyroMag.toFixed(3) : '',
+        threshold: liveThreshold!==null ? +liveThreshold.toFixed(4) : '',
+        beat: isPeak?1:0
+      });
     }
 
     const cutoff = t - (WAVE_BUFFER_SECONDS*1000 + 500);
@@ -716,6 +794,9 @@
     window.__calPeaks = [];
     prevVal = 0; prevPrevVal = 0; prevT = 0; prevPrevT = 0; lastCandidateTime = 0;
     lastSampleTime = 0;
+    rawLog = [];
+    logStartTime = performance.now();
+    exportLogBtn.style.display = 'none';
     setStatus('Calibrating — hold still, phone firmly on bare chest…', '');
     calibrateBtn.textContent = 'Calibrating…';
     calibrateBtn.classList.add('calibrating');
@@ -728,10 +809,11 @@
     setTimeout(()=>{
       calibrating = false;
       window.removeEventListener('devicemotion', motionHandler);
-      calibrateBtn.textContent = 'Calibrate (5s)';
+      calibrateBtn.textContent = 'Calibrate (8s)';
       calibrateBtn.classList.remove('calibrating');
       finishCalibration(window.__calPeaks || []);
-    }, 5000);
+      if(rawLog.length) exportLogBtn.style.display = 'block';
+    }, 8000);
   }
 
   async function startMeasuring(){
@@ -747,6 +829,11 @@
     runningAvg = 0;
     waveBuffer = [];
     prevVal = 0; prevPrevVal = 0; prevT = 0; prevPrevT = 0; lastCandidateTime = 0;
+    rrIntervals = [];
+    candidateBuffer = [];
+    rawLog = [];
+    logStartTime = performance.now();
+    exportLogBtn.style.display = 'none';
     sessionStart = performance.now();
     lastSampleTime = 0;
     bpmNumber.textContent = '--';
@@ -769,6 +856,7 @@
     startBtn.textContent = 'Start Measuring';
     startBtn.classList.remove('stop');
     calibrateBtn.disabled = false;
+    if(rawLog.length) exportLogBtn.style.display = 'block';
 
     const durationSec = (performance.now() - sessionStart)/1000;
 
@@ -801,12 +889,33 @@
     }
   }
 
+  function exportRawLog(){
+    if(!rawLog.length) return;
+    const header = 't_ms,accel_x,accel_y,accel_z,accel_mag,filtered,gyro_x,gyro_y,gyro_z,gyro_mag,live_threshold,beat_detected\n';
+    const rows = rawLog.map(r =>
+      [r.t, r.ax, r.ay, r.az, r.mag, r.filtered, r.gx, r.gy, r.gz, r.gyroMag, r.threshold, r.beat].join(',')
+    ).join('\n');
+    const csv = header + rows;
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+    a.href = url;
+    a.download = 'pulse-reader-log-' + stamp + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   calibrateBtn.addEventListener('click', ()=>{ if(!calibrating && !measuring) startCalibration(); });
 
   startBtn.addEventListener('click', ()=>{
     if(!measuring) startMeasuring();
     else stopMeasuring();
   });
+
+  exportLogBtn.addEventListener('click', exportRawLog);
 
   // initialize button state for default mode
   resetCalibration();
